@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CollectiveX KV-cache transfer benchmark entrypoint (2 ranks, 1 per node).
+"""CollectiveX KV-cache transfer benchmark entrypoint (2 ranks on one or two nodes).
 
 Rank 0 is the target (owns the pool the initiator pulls from / pushes into),
 rank 1 the initiator (posts every one-sided transfer and is the timed side).
@@ -443,6 +443,7 @@ def main() -> int:
     gathered: list = [None, None]
     dist.all_gather_object(gathered, (socket.gethostname(), rows if rank == 1 else None))
     hosts = [host for host, _ in gathered]
+    node_count = len(set(hosts))
     rows = gathered[1][1] or []
     all_ok = bool(rows) and all(r["verify"]["passed"] for r in rows)
 
@@ -479,8 +480,8 @@ def main() -> int:
                 "device_product": torch.cuda.get_device_name(device),
                 "gpus_per_node": args.gpus_per_node,
                 "hosts": hosts,
-                "nodes": 2,
-                "ranks_per_node": 1,
+                "nodes": node_count,
+                "ranks_per_node": world_size // node_count,
                 "scale_up_domain": args.scale_up_domain,
                 "scale_up_transport": args.scale_up_transport or None,
                 "topology_class": args.topology_class or None,

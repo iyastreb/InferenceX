@@ -270,6 +270,14 @@ deepep_install() {
     || { collx_log "ERROR: DeepEP V2 environment activation failed"; return 1; }
   collx_materialize_source "deepep-v2-$COLLX_DEEPEP_V2_COMMIT" "$source_dir" \
     || { collx_log "ERROR: DeepEP V2 staged source is invalid"; return 1; }
+  # Upstream registers the GIN window NCCL_WIN_STRICT_ORDERING, which drops PCIe relaxed ordering
+  # whatever NCCL_IB_PCI_RELAXED_ORDERING says; EP_WIN_RELAXED_ORDERING=1 opts a pool out. Unset,
+  # the registration is upstream's. A pin that moves or duplicates the flag fails here.
+  local window_cu="$source_dir/csrc/kernels/backend/nccl.cu"
+  local relaxed='get_env("EP_WIN_RELAXED_ORDERING", 0) ? NCCL_WIN_DEFAULT :'
+  [ "$(grep -c NCCL_WIN_STRICT_ORDERING "$window_cu")" = 1 ] \
+    && sed -i "s/NCCL_WIN_STRICT_ORDERING/($relaxed &)/" "$window_cu" \
+    || { collx_log "ERROR: DeepEP V2 window-ordering patch failed"; return 1; }
   # The RDC device-link step (nvcc -dlink) gets no -gencode from the extension build, so nvcc
   # falls back to its default arch (sm_75 on CUDA 13) and links kernels that cannot load on the
   # target GPU (gb300/sm103: cudaErrorUnknown). NVCC_PREPEND_FLAGS reaches the dlink too.
@@ -460,6 +468,7 @@ nccl_ep_install() {
   # unquoted on purpose: it carries two whitespace-separated pip specs.
   # shellcheck disable=SC2086
   python3 -m pip install -q --disable-pip-version-check --no-input \
+      --pre --extra-index-url https://pypi.nvidia.com \
       --target "$site" $COLLX_NCCL_EP_SPEC >&2 2>&1 \
     || { collx_log "ERROR: NCCL EP wheel install failed"; return 1; }
   nccl_ep_activate "$root" \

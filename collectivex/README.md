@@ -6,8 +6,7 @@ neutral result artifacts.
 
 A second suite, `kv-transfer`, measures disaggregated-serving KV-cache handoffs across transfer
 libraries and fabrics ([below](#kv-cache-transfer-suite)). A third, the
-[vLLM `swap_blocks` benchmark](docs/swap-blocks.md)
-([中文](docs/swap-blocks_zh.md)), measures pinned CPU↔GPU and same-GPU block copies,
+[vLLM `swap_blocks` benchmark](docs/swap-blocks.md), measures pinned CPU↔GPU and same-GPU block copies,
 with its own correctness checks and latency/bandwidth JSON output. It runs through the same
 sweep matrix and pool launchers (`suites: swap-blocks`).
 
@@ -169,7 +168,7 @@ benchmark's return code.
 
 ## KV-Cache Transfer Suite
 
-`kv-transfer` legs run 2 nodes x 1 GPU, the per-worker prefill/decode pair a disaggregated
+Scheduled `kv-transfer` legs run 2 nodes x 1 GPU, the per-worker prefill/decode pair a disaggregated
 deployment actually forms. Each moves bursts of 1 to 32 concurrent requests' paged KV (vLLM's
 packed block-major descriptor lists over seed-keyed random block tables) plus one contiguous bulk
 row as the wire-speed baseline. The workload is `kv-dsv4`, DeepSeek-V4-Pro's mixed fp8 cache as
@@ -177,6 +176,9 @@ vLLM allocates it, at ISL 2k to 512k and vLLM's 256-token block. `pull` (READ, v
 NixlConnector) and `push` (WRITE, SGLang disagg) are both timed from the initiator, with every
 request verified on the destination pool. The [methodology](docs/methodology.md#kv-cache-transfer-suite)
 has the geometry and verification model.
+
+Direct `bench/run_kv.py` launches also support two ranks on one node with distinct GPUs
+and `--gpus-per-node 2`. Result topology follows the ranks' gathered hostnames.
 
 Backends are `nixl` (what Dynamo, vLLM, and SGLang ship), `mooncake` (the CUDA wheel links libcuda
 at import; mi355x runs AMD's atom-dev build push-only), and `mori-io` (AMD's native engine), where
@@ -295,3 +297,6 @@ bash -n collectivex/runtime/*.sh collectivex/launchers/*.sh
 
 Core paths are `configs/`, `sweep_matrix.py`, `summarize.py`, `bench/`, `runtime/`, `launchers/`,
 and `tests/`.
+
+NCCL-EP nightly installation and exact wheel provenance are documented in
+[the NCCL-EP guide](docs/nccl-ep.md).
