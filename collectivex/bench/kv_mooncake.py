@@ -78,12 +78,16 @@ class MooncakeBackend(KVBackend):
         # a null here is what let an image wheel masquerade as the pinned one.
         self.library_version = library_version(
             ("mooncake-transfer-engine", "mooncake"), mooncake)
-        # Same-fabric GB pairs: the NVLink-IPC transport claims cross-node
-        # segments inside one NVLink domain and then fails the address import
-        # (nvlink_transport "Requested address not found", first kv CI run on
-        # gb200). This row measures the rdma lane, so pin the transport off;
-        # the ROCm twin (MC_USE_HIP_IPC) misclaims the same way on mi355x.
-        os.environ.setdefault("MC_USE_NVLINK_IPC", "0")
+        if args.fabric == "mnnvl":
+            # MC_USE_NVLINK_IPC is presence-based in native Mooncake;
+            # even "0" disables the FABRIC handles supplied by this suite.
+            os.environ.pop("MC_USE_NVLINK_IPC", None)
+            os.environ.pop("MC_INTRANODE_NVLINK", None)
+            os.environ["MC_FORCE_MNNVL"] = "1"
+            self.transport = "nvlink"
+        else:
+            os.environ.setdefault("MC_USE_NVLINK_IPC", "0")
+            self.transport = "rdma"
         # The engine fails any single sync call after 30 s. Under measured
         # contention (the x86 high-batch collapse this suite publishes) a
         # chunked call on a thrashing lane can legitimately exceed that, so

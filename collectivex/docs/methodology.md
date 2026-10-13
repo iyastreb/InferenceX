@@ -622,6 +622,12 @@ descriptor list grows. Per-lane bandwidth figures for the packed geometry are wh
 rows carry; figures measured under the retired per-(layer, page) geometry are not comparable and
 are not restated here.
 
+Direct Mooncake `mnnvl` runs require a native build with `USE_MNNVL=ON` and a live
+IMEX domain. The adapter forces `MC_FORCE_MNNVL=1` and clears the presence-based
+`MC_USE_NVLINK_IPC` and `MC_INTRANODE_NVLINK` selectors so its NVLink transport
+registers the suite's FABRIC allocations. Results record `nvlink` as the transport;
+the registry's scheduled Mooncake legs remain RDMA-only.
+
 Other lane facts, measured on the metal: single-WR bulk transfers above the provider's max
 message size must be split (the MoRI adapter caps WRs at 1 GiB); and the upstream PyPI Mooncake
 wheel is NVIDIA-only (it links libcuda.so.1 at import), so mi355x runs AMD's atom-dev build.
