@@ -94,7 +94,9 @@ class NIXLBackend(KVBackend):
         progress = os.environ.get("COLLX_NIXL_PROGRESS_THREAD", "1")
         if progress not in ("0", "1"):
             raise ValueError("COLLX_NIXL_PROGRESS_THREAD must be 0 or 1")
-        self.progress_thread = progress == "1"
+        self.progress_thread_requested = progress == "1"
+        # The target blocks in Gloo while the initiator posts; wireup still needs progress.
+        self.progress_thread = role == "target" or self.progress_thread_requested
         self.sgl_order = os.environ.get("COLLX_NIXL_SGL_ORDER", "preserve")
         if self.sgl_order not in ("preserve", "split-equal-length-runs"):
             raise ValueError("COLLX_NIXL_SGL_ORDER must be preserve or split-equal-length-runs")

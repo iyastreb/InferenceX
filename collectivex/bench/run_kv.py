@@ -391,6 +391,7 @@ def main() -> int:
             "fabric": args.fabric, "case_id": args.case_id,
             "source_sha": os.environ.get("COLLECTIVEX_SOURCE_SHA"),
             "nixl_progress_thread": getattr(backend, "progress_thread", None),
+            "nixl_progress_thread_requested": getattr(backend, "progress_thread_requested", None),
             "nixl_sgl_order": getattr(backend, "sgl_order", None),
             "nixl_ucx_sgl_split_by_size": getattr(backend, "sgl_split_by_size", None),
             "sampling": {"trials": args.trials, "reps_per_trial": args.reps,
@@ -566,7 +567,8 @@ def main() -> int:
                 "maturity": backend.maturity,
                 "nic_filter": backend.nic_filter,
                 "transport": backend.transport,
-                **({"progress_thread": backend.progress_thread,
+                **({"progress_thread": backend.progress_thread_requested,
+                    "target_progress_thread": True,
                     "sgl_order": backend.sgl_order,
                     "ucx_sgl_split_by_size": backend.sgl_split_by_size}
                    if args.backend == "nixl" else {}),

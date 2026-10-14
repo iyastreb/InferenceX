@@ -196,9 +196,12 @@ completion offsets, and host-wide IB counter snapshots; file I/O stays outside
 the timed stretches. Profiling adds timestamp overhead, so retain an unprofiled
 control. These are transfer completion times, not serving TTFT. Data counters use
 four-byte words and include unrelated host traffic; read failures are recorded.
-`COLLX_NIXL_PROGRESS_THREAD=0|1` selects the NIXL progress thread (default `1`),
-with the effective value recorded in results. Both options are opt-in experiment
-controls and do not change the scheduled sweep configuration.
+`COLLX_NIXL_PROGRESS_THREAD=0|1` selects the initiator's NIXL progress thread
+(default `1`). Target progress always stays enabled for wireup while it waits in
+Gloo. Per-rank profiles record requested and effective settings; result fields
+`progress_thread` and `target_progress_thread` describe the initiator and target.
+Both options are opt-in experiment controls and do not change the scheduled sweep
+configuration.
 For the private NIXL prototype, `COLLX_NIXL_SGL_ORDER=split-equal-length-runs`
 sets `NIXL_UCX_SGL_SPLIT_BY_SIZE=1` before engine initialization; default `preserve`
 explicitly sets it to `0`. This selector overrides an inherited native flag and
