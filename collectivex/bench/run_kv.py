@@ -394,6 +394,7 @@ def main() -> int:
             "nixl_progress_thread_requested": getattr(backend, "progress_thread_requested", None),
             "nixl_sgl_order": getattr(backend, "sgl_order", None),
             "nixl_ucx_sgl_split_by_size": getattr(backend, "sgl_split_by_size", None),
+            "nixl_ucx_rma_zcopy_max_seg_size": getattr(backend, "ucx_rma_zcopy_max_seg_size", None),
             "sampling": {"trials": args.trials, "reps_per_trial": args.reps,
                          "warmup_per_trial": args.warmup},
             "clock": "perf_counter", "time_unit": "ms",
@@ -570,7 +571,8 @@ def main() -> int:
                 **({"progress_thread": backend.progress_thread_requested,
                     "target_progress_thread": True,
                     "sgl_order": backend.sgl_order,
-                    "ucx_sgl_split_by_size": backend.sgl_split_by_size}
+                    "ucx_sgl_split_by_size": backend.sgl_split_by_size,
+                    "ucx_rma_zcopy_max_seg_size": backend.ucx_rma_zcopy_max_seg_size}
                    if args.backend == "nixl" else {}),
             },
             topology={

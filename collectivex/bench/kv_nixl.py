@@ -98,11 +98,16 @@ class NIXLBackend(KVBackend):
         # The target blocks in Gloo while the initiator posts; wireup still needs progress.
         self.progress_thread = role == "target" or self.progress_thread_requested
         self.sgl_order = os.environ.get("COLLX_NIXL_SGL_ORDER", "preserve")
-        if self.sgl_order not in ("preserve", "split-equal-length-runs"):
-            raise ValueError("COLLX_NIXL_SGL_ORDER must be preserve or split-equal-length-runs")
+        fragment_caps = {"ucx-fragment-32k": "32k", "ucx-fragment-256k": "256k"}
+        if self.sgl_order not in ("preserve", "split-equal-length-runs", *fragment_caps):
+            raise ValueError("COLLX_NIXL_SGL_ORDER must be preserve, split-equal-length-runs, "
+                             "ucx-fragment-32k, or ucx-fragment-256k")
         self.sgl_split_by_size = self.sgl_order == "split-equal-length-runs"
         # This experiment selector owns the native flag, including the baseline.
         os.environ["NIXL_UCX_SGL_SPLIT_BY_SIZE"] = "1" if self.sgl_split_by_size else "0"
+        if self.sgl_order in fragment_caps:
+            os.environ["UCX_RMA_ZCOPY_MAX_SEG_SIZE"] = fragment_caps[self.sgl_order]
+        self.ucx_rma_zcopy_max_seg_size = os.environ.get("UCX_RMA_ZCOPY_MAX_SEG_SIZE")
         # Listener off: metadata goes through the harness exchange.
         self._agent = nixl_agent(role, nixl_agent_config(self.progress_thread, False, 0,
                                                         backends=[self.transport]))

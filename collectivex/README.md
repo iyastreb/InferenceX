@@ -208,6 +208,14 @@ explicitly sets it to `0`. This selector overrides an inherited native flag and
 records its mode in results/profiles. The split mode requires a NIXL build
 supporting that flag; it splits contiguous equal-length descriptor runs without
 reordering source/destination pairs.
+The same private selector accepts `ucx-fragment-32k` and `ucx-fragment-256k`.
+These presets set `UCX_RMA_ZCOPY_MAX_SEG_SIZE=32k` or `256k` before agent creation
+and keep `NIXL_UCX_SGL_SPLIT_BY_SIZE=0`, without reordering descriptors. The real
+UCX option caps eligible RMA/RNDV zcopy fragments; it is not an aggregate SGL byte
+budget. Presets override an inherited segment cap; `preserve` and
+`split-equal-length-runs` leave it unchanged. Both rank profiles and result
+implementation metadata record the resulting segment-cap environment value
+(`null` when unset, leaving UCX's default).
 
 ## Workflow And Artifacts
 
