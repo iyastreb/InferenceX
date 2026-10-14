@@ -91,9 +91,13 @@ class NIXLBackend(KVBackend):
         self.nic_filter = args.kv_device or None
         # The network profile marks EFA pools; there FI_PROVIDER=efa is already set.
         self.transport = "LIBFABRIC" if os.environ.get("COLLX_RDMA_FABRIC") == "efa" else "UCX"
-        # prog thread on, listener off: metadata goes through the harness exchange.
-        self._agent = nixl_agent(role, nixl_agent_config(True, False, 0,
-                                                         backends=[self.transport]))
+        progress = os.environ.get("COLLX_NIXL_PROGRESS_THREAD", "1")
+        if progress not in ("0", "1"):
+            raise ValueError("COLLX_NIXL_PROGRESS_THREAD must be 0 or 1")
+        self.progress_thread = progress == "1"
+        # Listener off: metadata goes through the harness exchange.
+        self._agent = nixl_agent(role, nixl_agent_config(self.progress_thread, False, 0,
+                                                        backends=[self.transport]))
         self._handles = []
         self._dlists = []
         self._pool = None

@@ -105,7 +105,9 @@ def offset_lists(cfg: dict, local_tables, remote_tables, local_base: int = 0,
             kv_workload.desc_sizes(cfg).tolist())
 
 
-def time_bursts(transfers, warmup: int, reps: int) -> tuple[list[float], list[float]]:
+def time_bursts(transfers, warmup: int, reps: int, *,
+                profile: list[dict] | None = None,
+                trial: int = 1) -> tuple[list[float], list[float]]:
     """(burst_ms, request_ms), warmups dropped. ``transfers`` is a list of
     (post, wait) pairs — one per request. A burst posts every request, then
     drains the waits in posting order; burst_ms is post-of-first to
@@ -113,6 +115,8 @@ def time_bursts(transfers, warmup: int, reps: int) -> tuple[list[float], list[fl
     host-observed completion offset from the burst start. Because the waits
     drain in posting order, a request's mark upper-bounds its true completion
     (a later request that finished early is observed at its wait's turn)."""
+    if profile is not None:
+        return _profile_bursts(transfers, warmup, reps, profile, trial)
     burst_ms: list[float] = []
     request_ms: list[float] = []
     for rep in range(warmup + reps):
@@ -124,6 +128,47 @@ def time_bursts(transfers, warmup: int, reps: int) -> tuple[list[float], list[fl
             wait()
             marks.append((time.perf_counter() - start) * 1e3)
         if rep >= warmup:
+            burst_ms.append(marks[-1])
+            request_ms.extend(marks)
+    return burst_ms, request_ms
+
+
+def _profile_bursts(transfers, warmup: int, reps: int, profile: list[dict],
+                    trial: int) -> tuple[list[float], list[float]]:
+    """Keep timestamp capture in the timed stretch; serialize only afterward."""
+    burst_ms, request_ms = [], []
+    clock = time.perf_counter
+    for iteration in range(warmup + reps):
+        post_starts = [0.0] * len(transfers)
+        post_ends = [0.0] * len(transfers)
+        completions = [0.0] * len(transfers)
+        start = clock()
+        for index, (post, _) in enumerate(transfers):
+            post_starts[index] = clock()
+            post()
+            post_ends[index] = clock()
+        posted = clock()
+        for index, (_, wait) in enumerate(transfers):
+            wait()
+            completions[index] = clock()
+        completed = completions[-1]
+        marks = [(stamp - start) * 1e3 for stamp in completions]
+        measured = iteration >= warmup
+        profile.append({
+            "record_type": "burst",
+            "trial": trial,
+            "iteration": iteration + 1,
+            "phase": "measured" if measured else "warmup",
+            "rep": iteration - warmup + 1 if measured else iteration + 1,
+            "post_ms": (posted - start) * 1e3,
+            "wait_ms": (completed - posted) * 1e3,
+            "total_ms": (completed - start) * 1e3,
+            "request_post_intervals_ms": [
+                [(begin - start) * 1e3, (end - start) * 1e3]
+                for begin, end in zip(post_starts, post_ends)],
+            "request_complete_ms": marks,
+        })
+        if measured:
             burst_ms.append(marks[-1])
             request_ms.extend(marks)
     return burst_ms, request_ms

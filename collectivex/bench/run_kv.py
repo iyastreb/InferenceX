@@ -24,6 +24,8 @@ import json
 import os
 import socket
 import sys
+import time
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.dirname(HERE)]
@@ -58,6 +60,48 @@ DESC_BUDGET = 2_250_000
 # 16, ~15x budget for that one burst; grid-wide the floor costs ~1.33x the
 # mixed twelve-rung grid and is priced into all three kv launcher guards).
 LADDER_FLOOR = 5
+
+NIC_COUNTER_UNITS = {
+    "port_xmit_data": {"unit": "4-byte words", "bytes_per_unit": 4},
+    "port_rcv_data": {"unit": "4-byte words", "bytes_per_unit": 4},
+    "port_xmit_packets": {"unit": "packets"},
+    "port_rcv_packets": {"unit": "packets"},
+    "port_rcv_errors": {"unit": "packets"},
+    "port_xmit_discards": {"unit": "packets"},
+    "symbol_error": {"unit": "events"},
+    "link_downed": {"unit": "events"},
+}
+
+
+def nic_snapshot() -> dict:
+    """Host-wide counters, including unrelated traffic; reads are never timed."""
+    root = Path("/sys/class/infiniband")
+    result = {"unix_ns": time.time_ns(), "monotonic_ns": time.perf_counter_ns(),
+              "ports": {}, "errors": {}}
+    try:
+        directories = sorted(root.glob("*/ports/*/counters"))
+    except OSError as exc:
+        result["errors"][str(root)] = str(exc)
+        return result
+    if not directories:
+        result["errors"][str(root)] = "no visible port counter directories"
+    for directory in directories:
+        port = directory.parent
+        key = f"{directory.parents[2].name}:{port.name}"
+        values = {"counters": {}, "metadata": {}, "errors": {}}
+        for name in NIC_COUNTER_UNITS:
+            try:
+                values["counters"][name] = int((directory / name).read_text().strip())
+            except (OSError, ValueError) as exc:
+                values["errors"][name] = str(exc)
+        for name in ("state", "link_layer", "rate"):
+            try:
+                values["metadata"][name] = (port / name).read_text().strip()
+            except OSError as exc:
+                values["errors"][name] = str(exc)
+        result["ports"][key] = values
+    result["end_monotonic_ns"] = time.perf_counter_ns()
+    return result
 
 
 def add_kv_args(ap: argparse.ArgumentParser) -> None:
@@ -238,6 +282,12 @@ def main() -> int:
     ap.add_argument("--backend", required=True, choices=["nixl", "mori-io", "mooncake"])
     add_kv_args(ap)
     args = ap.parse_args()
+    profile_value = os.environ.get("COLLX_PROFILE", "0")
+    if profile_value not in ("0", "1"):
+        ap.error("COLLX_PROFILE must be 0 or 1")
+    profile_enabled = profile_value == "1"
+    if profile_enabled and not os.environ.get("LOG_DIR"):
+        ap.error("COLLX_PROFILE=1 requires a rank-local LOG_DIR")
 
     case = kv_case(args)
     computed_case_id = ep_harness.case_id(args.runner, case)
@@ -331,6 +381,26 @@ def main() -> int:
     dist.all_gather_object(payloads, backend.publish())
     backend.connect(payloads[1 - rank])
     dist.barrier()
+    profile_file = None
+    if profile_enabled:
+        profile_file = (Path(os.environ["LOG_DIR"]) / "profile.jsonl").open("x")
+        metadata = {
+            "record_type": "metadata", "version": 1,
+            "hostname": socket.gethostname(), "pid": os.getpid(),
+            "rank": rank, "role": role, "backend": args.backend,
+            "fabric": args.fabric, "case_id": args.case_id,
+            "source_sha": os.environ.get("COLLECTIVEX_SOURCE_SHA"),
+            "nixl_progress_thread": getattr(backend, "progress_thread", None),
+            "sampling": {"trials": args.trials, "reps_per_trial": args.reps,
+                         "warmup_per_trial": args.warmup},
+            "clock": "perf_counter", "time_unit": "ms",
+            "completion_semantics": "ordered host-observed offsets from burst start",
+            "counter_scope": "all visible host IB ports; includes unrelated traffic",
+            "counter_interval": "preparation, warmups, measured bursts, and barriers",
+            "counter_units": NIC_COUNTER_UNITS,
+        }
+        profile_file.write(json.dumps(metadata) + "\n")
+        profile_file.flush()
     if rank == 1:
         print(f"[run_kv] backend={args.backend} workload={args.workload_name} "
               f"precision={args.precision} fabric={args.fabric} isls={isls} "
@@ -362,18 +432,35 @@ def main() -> int:
 
     def measure(make, cfg, cfg_row: dict, op: str, verify_side: str, table_pairs=None):
         """One grid point: initiator times bursts, then the verifying side checks."""
+        profile_samples = [] if profile_enabled else None
+        prep_s = None
+        if profile_enabled:
+            counters_before = nic_snapshot()
+            dist.barrier()
         if role == "initiator":
             made = make()  # one (post, wait, prep_seconds) per request in the burst
             prep_s = sum(m[2] for m in made)
             pairs = [m[:2] for m in made]
             samples: list[float] = []
             request_samples: list[float] = []
-            for _ in range(args.trials):
-                burst_ms, request_ms = time_bursts(pairs, args.warmup, args.reps)
+            for trial in range(1, args.trials + 1):
+                burst_ms, request_ms = time_bursts(
+                    pairs, args.warmup, args.reps, profile=profile_samples, trial=trial)
                 samples.extend(burst_ms)
                 request_samples.extend(request_ms)
             backend.release()
         dist.barrier()  # transfers complete before anyone inspects pools
+        if profile_enabled:
+            counters_after = nic_snapshot()
+            point = {**cfg_row, "op": op}
+            profile_file.write(json.dumps({
+                "record_type": "point", "point": point,
+                "prep_ms": prep_s * 1e3 if prep_s is not None else None,
+                "counters_before": counters_before, "counters_after": counters_after,
+            }) + "\n")
+            for sample in profile_samples:
+                profile_file.write(json.dumps({**sample, "point": point}) + "\n")
+            profile_file.flush()
         verdict = exchange_verdict(
             dist, role, verify_side,
             lambda: verify_burst(cfg, table_pairs))
@@ -439,6 +526,8 @@ def main() -> int:
                            verify_side="none"))
 
     backend.teardown()
+    if profile_file is not None:
+        profile_file.close()
 
     gathered: list = [None, None]
     dist.all_gather_object(gathered, (socket.gethostname(), rows if rank == 1 else None))
@@ -475,6 +564,8 @@ def main() -> int:
                 "maturity": backend.maturity,
                 "nic_filter": backend.nic_filter,
                 "transport": backend.transport,
+                **({"progress_thread": backend.progress_thread}
+                   if args.backend == "nixl" else {}),
             },
             topology={
                 "device_product": torch.cuda.get_device_name(device),
