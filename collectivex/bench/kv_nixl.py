@@ -95,6 +95,12 @@ class NIXLBackend(KVBackend):
         if progress not in ("0", "1"):
             raise ValueError("COLLX_NIXL_PROGRESS_THREAD must be 0 or 1")
         self.progress_thread = progress == "1"
+        self.sgl_order = os.environ.get("COLLX_NIXL_SGL_ORDER", "preserve")
+        if self.sgl_order not in ("preserve", "split-equal-length-runs"):
+            raise ValueError("COLLX_NIXL_SGL_ORDER must be preserve or split-equal-length-runs")
+        self.sgl_split_by_size = self.sgl_order == "split-equal-length-runs"
+        # This experiment selector owns the native flag, including the baseline.
+        os.environ["NIXL_UCX_SGL_SPLIT_BY_SIZE"] = "1" if self.sgl_split_by_size else "0"
         # Listener off: metadata goes through the harness exchange.
         self._agent = nixl_agent(role, nixl_agent_config(self.progress_thread, False, 0,
                                                         backends=[self.transport]))

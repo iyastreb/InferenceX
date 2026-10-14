@@ -199,6 +199,12 @@ four-byte words and include unrelated host traffic; read failures are recorded.
 `COLLX_NIXL_PROGRESS_THREAD=0|1` selects the NIXL progress thread (default `1`),
 with the effective value recorded in results. Both options are opt-in experiment
 controls and do not change the scheduled sweep configuration.
+For the private NIXL prototype, `COLLX_NIXL_SGL_ORDER=split-equal-length-runs`
+sets `NIXL_UCX_SGL_SPLIT_BY_SIZE=1` before engine initialization; default `preserve`
+explicitly sets it to `0`. This selector overrides an inherited native flag and
+records its mode in results/profiles. The split mode requires a NIXL build
+supporting that flag; it splits contiguous equal-length descriptor runs without
+reordering source/destination pairs.
 
 ## Workflow And Artifacts
 
