@@ -190,6 +190,16 @@ rides its LIBFABRIC plugin instead of UCX, and there is no `mooncake` leg (its w
 verbs RC, which EFA does not provide). The grid and per-pool scheduling
 live in `configs/kv_sweep.json`; dispatch with `suites: kv-transfer`.
 
+For private KV profiling, `COLLX_PROFILE=1` writes `profile.jsonl` in each rank's
+fresh `LOG_DIR`. It records warmup/measured burst posting, waiting, ordered request
+completion offsets, and host-wide IB counter snapshots; file I/O stays outside
+the timed stretches. Profiling adds timestamp overhead, so retain an unprofiled
+control. These are transfer completion times, not serving TTFT. Data counters use
+four-byte words and include unrelated host traffic; read failures are recorded.
+`COLLX_NIXL_PROGRESS_THREAD=0|1` selects the NIXL progress thread (default `1`),
+with the effective value recorded in results. Both options are opt-in experiment
+controls and do not change the scheduled sweep configuration.
+
 ## Workflow And Artifacts
 
 `.github/workflows/collectivex-sweep.yml` has two jobs. `setup` generates a public-SKU matrix
